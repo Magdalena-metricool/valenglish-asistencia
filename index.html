@@ -95,34 +95,6 @@
   }
   .settings button:hover{background:var(--moss-dark);}
 
-  .slack-row{
-    margin-top:14px;
-    display:flex;
-    align-items:center;
-    gap:12px;
-  }
-  .slack-row button{
-    font-family:'Helvetica Neue',Arial,sans-serif;
-    font-size:13px;
-    font-weight:600;
-    padding:7px 16px;
-    border-radius:3px;
-    border:1px solid #4A154B;
-    background:#4A154B;
-    color:#fff;
-    cursor:pointer;
-    transition:background .15s;
-  }
-  .slack-row button:hover{ background:#3a0f3a; }
-  .slack-row button:disabled{ opacity:.55; cursor:default; }
-  #slackStatus{
-    font-family:'Helvetica Neue',Arial,sans-serif;
-    font-size:13px;
-    color:var(--muted);
-  }
-  #slackStatus.ok{ color:var(--moss); }
-  #slackStatus.err{ color:var(--clay); }
-
   #status{
     font-family:'Helvetica Neue',Arial,sans-serif;
     font-size:13px;
@@ -182,11 +154,31 @@
     padding:7px 14px;border-radius:3px;cursor:pointer;
   }
   .export-row button:hover{background:var(--moss);color:#fff;}
+
+  .mail-row{
+    padding:10px 18px 14px;
+    border-top:1px solid #efe9da;
+    text-align:right;
+  }
+  .mail-note{
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    font-size:12px;color:var(--muted);font-style:italic;
+  }
+  .mail-btn{
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    font-size:12.5px;font-weight:600;
+    background:none;border:1px solid var(--clay);color:var(--clay);
+    padding:7px 14px;border-radius:3px;cursor:pointer;
+  }
+  .mail-btn:hover:not(:disabled){background:var(--clay);color:#fff;}
+  .mail-btn:disabled{
+    border-color:var(--line);color:var(--muted);cursor:default;
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="eyebrow">ValEnglish</div>
+  <div class="eyebrow">Fluentbe · ValEnglish</div>
   <h1>Control de Asistencia</h1>
   <p class="sub">Sube el Excel de reportes de Zoom (el export de Metricool) y calculo automáticamente el % de asistencia de cada estudiante, agrupado por clase.</p>
 
@@ -199,15 +191,8 @@
 
   <div class="settings">
     <span>Dominios de profesores a excluir (separados por coma):</span>
-    <input type="text" id="teacherDomains" value="valenglish">
+    <input type="text" id="teacherDomains" value="valenglish, fluentbe">
     <button id="recalc">Recalcular</button>
-  </div>
-
-  <div class="settings" style="margin-top:10px;">
-    <span>Slack Webhook URL:</span>
-    <input type="text" id="webhookUrl" placeholder="https://hooks.slack.com/services/..." style="width:340px;">
-    <button id="slackBtn">📣 Enviar recordatorio</button>
-    <span id="slackStatus"></span>
   </div>
 
   <div id="status"></div>
@@ -234,10 +219,7 @@ fileInput.addEventListener('change', e => {
   if (e.target.files.length) handleFile(e.target.files[0]);
 });
 document.getElementById('recalc').addEventListener('click', () => {
-  if (lastWorkbook) {
-    if (isTrackerFormat(lastWorkbook)) processTrackerWorkbook(lastWorkbook);
-    else processWorkbook(lastWorkbook);
-  }
+  if (lastWorkbook) processWorkbook(lastWorkbook);
 });
 
 function handleFile(file){
@@ -249,8 +231,7 @@ function handleFile(file){
       const data = new Uint8Array(e.target.result);
       const wb = XLSX.read(data, {type:'array', cellDates:true});
       lastWorkbook = wb;
-      if (isTrackerFormat(wb)) processTrackerWorkbook(wb);
-      else processWorkbook(wb);
+      processWorkbook(wb);
     }catch(err){
       statusEl.textContent = 'No pude leer el archivo: ' + err.message;
     }
@@ -258,166 +239,8 @@ function handleFile(file){
   reader.readAsArrayBuffer(file);
 }
 
-// ── Detect tracker format ────────────────────────────────────────────
-function isTrackerFormat(wb){
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:null});
-  return rows.slice(0, 3).some(r => r && r.some(c => c === 'STUDENT ATTENDANCE TRACKER'));
-}
-
-// ── Tracker parser (P/E/U/T format) ─────────────────────────────────
-function processTrackerWorkbook(wb){
-  // byGroup: { groupName: { studentName: { p, total } } }
-  const byGroup = {};
-  const origNames = {};
-
-  const SKIP = new Set(['SCHOOL NAME','COURSE TITLE','PROFESSOR NAME','LOCATION',
-                        'STUDENT NAME','STUDENT ID','DATE','TOTALS','PERCENTAGES',
-                        'VALEnglish','ValEnglish','Remote','Q1','Q2','Q3','Q4',
-                        'SEMESTER','MONTH','YEAR','TIME / CLASS PERIOD',
-                        'KEY','PRESENT','UNEXCUSED ABSENCE','EXCUSED ABSENCE','TARDY']);
-
-  wb.SheetNames.forEach(sheetName => {
-    const ws = wb.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:null});
-
-    let currentCourse = null;
-    let inBlock = false;
-
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r) continue;
-
-      // New block header: SCHOOL NAME + COURSE TITLE
-      if (r[1] === 'SCHOOL NAME' && r[5] === 'COURSE TITLE') {
-        const dataRow = rows[i+1] || [];
-        currentCourse = dataRow[5] ? String(dataRow[5]).trim() : null;
-        inBlock = false;
-        continue;
-      }
-
-      // Student block starts after STUDENT NAME header
-      if (r[1] === 'STUDENT NAME') {
-        inBlock = true;
-        i++; // skip the session-number row below it
-        continue;
-      }
-
-      // Student data rows
-      if (inBlock && currentCourse && r[1] && typeof r[1] === 'string') {
-        const name = r[1].trim();
-        if (!name || SKIP.has(name)) { inBlock = false; continue; }
-
-        // Use pre-calculated totals: col 35=P, 36=U, 37=E, 38=T
-        const p = (typeof r[35] === 'number') ? r[35] : 0;
-        const u = (typeof r[36] === 'number') ? r[36] : 0;
-        const e = (typeof r[37] === 'number') ? r[37] : 0;
-        const t = (typeof r[38] === 'number') ? r[38] : 0;
-        const total = p + u + e + t;
-        if (total === 0) continue;
-
-        const group = unifyWorkshopName(currentCourse);
-        if (!byGroup[group]) { byGroup[group] = {}; origNames[group] = new Set(); }
-        origNames[group].add(currentCourse);
-
-        // Clean name (remove leading spaces)
-        const cleanName = name.replace(/^\s+/, '');
-        if (!byGroup[group][cleanName]) byGroup[group][cleanName] = {p: 0, total: 0};
-        byGroup[group][cleanName].p += p;
-        byGroup[group][cleanName].total += total;
-      }
-    }
-  });
-
-  const totalGroups = Object.keys(byGroup).length;
-  if (totalGroups === 0) {
-    statusEl.textContent = 'No encontré datos en el formato Attendance Tracker en este archivo.';
-    return;
-  }
-  statusEl.textContent = `Procesado (formato Attendance Tracker): ${totalGroups} grupos en ${wb.SheetNames.length} hoja(s).`;
-  renderTrackerGroups(byGroup, origNames);
-}
-
-function renderTrackerGroups(byGroup, origNames){
-  groupsEl.innerHTML = '';
-  Object.keys(byGroup).forEach(group => {
-    const studentMap = byGroup[group];
-    const students = Object.keys(studentMap).sort((a,b) => studentMap[b].p - studentMap[a].p);
-
-    const card = document.createElement('div');
-    card.className = 'group';
-
-    const head = document.createElement('div');
-    head.className = 'group-head';
-    const totalSessions = students.length ? Math.max(...students.map(s => studentMap[s].total)) : 0;
-    head.innerHTML = `<span class="name">${escapeHtml(group)}</span><span class="meta">${totalSessions} sesion${totalSessions===1?'':'es'}</span>`;
-    card.appendChild(head);
-
-    const names = origNames[group];
-    if (names && names.size > 1) {
-      const sub = document.createElement('div');
-      sub.style.cssText = "font-family:'Helvetica Neue',Arial,sans-serif;font-size:11.5px;color:var(--muted);padding:6px 18px 0;font-style:italic;";
-      sub.textContent = 'Incluye: ' + Array.from(names).join(' · ');
-      card.appendChild(sub);
-    }
-
-    if (students.length === 0) {
-      const note = document.createElement('div');
-      note.className = 'empty-note';
-      note.textContent = 'Sin estudiantes registrados.';
-      card.appendChild(note);
-    } else {
-      const table = document.createElement('table');
-      table.innerHTML = `<thead><tr><th>Estudiante</th><th>Asistencias (P)</th><th>% Asistencia</th></tr></thead>`;
-      const tbody = document.createElement('tbody');
-      students.forEach(name => {
-        const {p, total} = studentMap[name];
-        const pct = total > 0 ? Math.round((p/total)*1000)/10 : 0;
-        const tr = document.createElement('tr');
-        if (pct < 75) tr.className = 'low-row';
-        tr.innerHTML = `
-          <td>${escapeHtml(name)}</td>
-          <td>${p} / ${total}</td>
-          <td>
-            <div class="bar-cell">
-              <div class="bar-track"><div class="bar-fill ${pct<75?'low':''}" style="width:${pct}%"></div></div>
-              <span class="pct ${pct<75?'low':''}">${pct}%</span>
-            </div>
-          </td>`;
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      card.appendChild(table);
-    }
-    groupsEl.appendChild(card);
-  });
-
-  const exportRow = document.createElement('div');
-  exportRow.className = 'export-row';
-  exportRow.innerHTML = `<button id="exportBtn">Exportar resumen a Excel</button>`;
-  groupsEl.appendChild(exportRow);
-  document.getElementById('exportBtn').addEventListener('click', () => exportTrackerToExcel(byGroup, origNames));
-}
-
-function exportTrackerToExcel(byGroup, origNames){
-  const rows = [['Grupo/Clase','Nombres originales incluidos','Estudiante','Asistencias (P)','Total sesiones','% Asistencia']];
-  Object.keys(byGroup).forEach(group => {
-    const studentMap = byGroup[group];
-    const names = origNames[group] ? Array.from(origNames[group]).join(' / ') : group;
-    Object.keys(studentMap).sort((a,b)=>studentMap[b].p-studentMap[a].p).forEach(name => {
-      const {p, total} = studentMap[name];
-      rows.push([group, names, name, p, total, Math.round((p/total)*1000)/10]);
-    });
-  });
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:18},{wch:40},{wch:32},{wch:14},{wch:14},{wch:14}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Asistencia');
-  XLSX.writeFile(wb, 'resumen_asistencia.xlsx');
-}
-
 function unifyWorkshopName(topic){
-  const m = topic.match(/(?:GrWshop|Group Workshop)\s*(\d+(?:\.\d+)?)/i);
+  const m = topic.match(/(?:GrWshop|Group Workshop)\s*(\d+)/i);
   if (m) return `Workshop ${m[1]}`;
   return topic;
 }
@@ -560,6 +383,7 @@ function renderGroups(byTopic, originalNames, nameDisplay){
       });
       table.appendChild(tbody);
       card.appendChild(table);
+      initMailButton(topic, byTopic, nameDisplay, card);
     }
     groupsEl.appendChild(card);
   });
@@ -591,49 +415,75 @@ function exportToExcel(byTopic, originalNames, nameDisplay){
   XLSX.writeFile(wb, 'resumen_asistencia.xlsx');
 }
 
+const mailQueues = {};
+
+function buildLowAttendanceList(byTopic, nameDisplay, topic){
+  const sessList = byTopic[topic];
+  const total = sessList.length;
+  const counts = {};
+  sessList.forEach(set => set.forEach(id => { counts[id] = (counts[id]||0) + 1; }));
+  const list = [];
+  Object.keys(counts).forEach(id => {
+    const pct = Math.round((counts[id]/total)*1000)/10;
+    if (pct < 75 && id.includes('@')) {
+      list.push({ email: id, name: bestDisplayName(id, nameDisplay), pct });
+    }
+  });
+  return list;
+}
+
+function initMailButton(topic, byTopic, nameDisplay, container){
+  const list = buildLowAttendanceList(byTopic, nameDisplay, topic);
+  const wrap = document.createElement('div');
+  wrap.className = 'mail-row';
+  if (list.length === 0) {
+    wrap.innerHTML = `<span class="mail-note">Nadie por debajo del 75% con email disponible en este grupo.</span>`;
+    container.appendChild(wrap);
+    return;
+  }
+  mailQueues[topic] = list.slice();
+  const btn = document.createElement('button');
+  btn.className = 'mail-btn';
+  updateMailBtnLabel(btn, topic);
+  btn.addEventListener('click', () => sendNextMail(topic, btn));
+  wrap.appendChild(btn);
+  container.appendChild(wrap);
+}
+
+function updateMailBtnLabel(btn, topic){
+  const remaining = mailQueues[topic] ? mailQueues[topic].length : 0;
+  if (remaining === 0) {
+    btn.textContent = 'Avisos enviados ✓';
+    btn.disabled = true;
+  } else {
+    btn.textContent = `Enviar aviso individual (${remaining} pendiente${remaining===1?'':'s'})`;
+  }
+}
+
+function sendNextMail(topic, btn){
+  const queue = mailQueues[topic];
+  if (!queue || queue.length === 0) return;
+  const student = queue.shift();
+  const subject = encodeURIComponent(`Aviso de asistencia — ${topic}`);
+  const body = encodeURIComponent(
+`Hola ${student.name},
+
+Te escribimos porque tu asistencia a las clases de ${topic} está en el ${student.pct}%, por debajo del 75% requerido.
+
+Si necesitas reorganizar horarios o tienes alguna dificultad para asistir, contáctanos y lo vemos juntos.
+
+Un saludo,
+Equipo de People`);
+  window.location.href = `mailto:${student.email}?subject=${subject}&body=${body}`;
+  updateMailBtnLabel(btn, topic);
+}
+
 function bestDisplayName(ident, nameDisplay){
   if (ident.includes('@')) return ident;
   const variants = nameDisplay && nameDisplay[ident];
   if (!variants) return ident;
   return Object.keys(variants).sort((a,b) => variants[b]-variants[a])[0];
 }
-
-// ── Slack reminder (Incoming Webhook) ───────────────────────────────
-document.getElementById('slackBtn').addEventListener('click', async () => {
-  const btn = document.getElementById('slackBtn');
-  const slackStatus = document.getElementById('slackStatus');
-  const webhookUrl = document.getElementById('webhookUrl').value.trim();
-
-  if (!webhookUrl || !webhookUrl.startsWith('https://hooks.slack.com/')) {
-    slackStatus.className = 'err';
-    slackStatus.textContent = '✗ Introduce una Webhook URL válida de Slack';
-    return;
-  }
-
-  btn.disabled = true;
-  slackStatus.className = '';
-  slackStatus.textContent = 'Enviando…';
-
-  const now = new Date();
-  const months = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  const prevMonth = months[(now.getMonth() + 11) % 12];
-  const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
-
-  const text = `📊 *Recordatorio mensual — Control de Asistencia ValEnglish*\n\nYa está disponible el Excel de reportes de Zoom de *${prevMonth} ${year}*. Es el momento de revisar la asistencia de los estudiantes.\n\nPor favor, sube el archivo a la herramienta de control de asistencia y comparte el resumen con el equipo. 🙌`;
-
-  try {
-    const params = new URLSearchParams();
-    params.append('payload', JSON.stringify({ text }));
-    await fetch(webhookUrl, { method: 'POST', mode: 'no-cors', body: params });
-    slackStatus.className = 'ok';
-    slackStatus.textContent = '✓ Recordatorio enviado a #es5-people-metricool';
-  } catch (err) {
-    slackStatus.className = 'err';
-    slackStatus.textContent = '✗ Error al enviar: ' + err.message;
-  } finally {
-    btn.disabled = false;
-  }
-});
 
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
