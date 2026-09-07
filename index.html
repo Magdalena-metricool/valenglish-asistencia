@@ -159,6 +159,10 @@
     padding:10px 18px 14px;
     border-top:1px solid #efe9da;
     text-align:right;
+    display:flex;
+    justify-content:flex-end;
+    gap:8px;
+    flex-wrap:wrap;
   }
   .mail-note{
     font-family:'Helvetica Neue',Arial,sans-serif;
@@ -442,35 +446,40 @@ function initMailButton(topic, byTopic, nameDisplay, container){
     return;
   }
   mailQueues[topic] = list.slice();
-  const btn = document.createElement('button');
-  btn.className = 'mail-btn';
-  updateMailBtnLabel(btn, topic);
-  btn.addEventListener('click', () => sendNextMail(topic, btn));
-  wrap.appendChild(btn);
+  const btnEs = document.createElement('button');
+  btnEs.className = 'mail-btn';
+  const btnEn = document.createElement('button');
+  btnEn.className = 'mail-btn';
+
+  function refreshLabels(){
+    const remaining = mailQueues[topic] ? mailQueues[topic].length : 0;
+    if (remaining === 0) {
+      btnEs.textContent = 'Avisos enviados ✓';
+      btnEn.textContent = 'Sent ✓';
+      btnEs.disabled = true;
+      btnEn.disabled = true;
+    } else {
+      btnEs.textContent = `Enviar en Español (${remaining})`;
+      btnEn.textContent = `Send in English (${remaining})`;
+    }
+  }
+  refreshLabels();
+  btnEs.addEventListener('click', () => sendNextMail(topic, 'es', refreshLabels));
+  btnEn.addEventListener('click', () => sendNextMail(topic, 'en', refreshLabels));
+  wrap.appendChild(btnEs);
+  wrap.appendChild(btnEn);
   container.appendChild(wrap);
 }
 
-function updateMailBtnLabel(btn, topic){
-  const remaining = mailQueues[topic] ? mailQueues[topic].length : 0;
-  if (remaining === 0) {
-    btn.textContent = 'Avisos enviados ✓';
-    btn.disabled = true;
-  } else {
-    btn.textContent = `Enviar aviso individual (${remaining} pendiente${remaining===1?'':'s'})`;
-  }
-}
-
-function sendNextMail(topic, btn){
+function sendNextMail(topic, lang, refreshLabels){
   const queue = mailQueues[topic];
   if (!queue || queue.length === 0) return;
   const student = queue.shift();
-  const subject = encodeURIComponent(`Asistencia a clases de inglés / English Class Attendance — ${topic}`);
-  const body = encodeURIComponent(
-`[Borra la versión en el idioma que no necesites antes de enviar / Please delete the version in the language you don't need before sending]
-
-——— ESPAÑOL ———
-
-Hola, ${student.name}
+  let subject, body;
+  if (lang === 'es') {
+    subject = encodeURIComponent(`Asistencia a clases de inglés — ${topic}`);
+    body = encodeURIComponent(
+`Hola, ${student.name}
 
 Te escribo para revisar contigo la asistencia a las clases de inglés.
 
@@ -480,11 +489,11 @@ Queremos ver si estás teniendo problemas de carga de trabajo o de horario para 
 Dime cómo lo ves y si podemos reajustar algo para que te encaje.
 
 Un abrazo,
-Equipo de People
-
-——— ENGLISH ———
-
-Hi ${student.name},
+Equipo de People`);
+  } else {
+    subject = encodeURIComponent(`English Class Attendance — ${topic}`);
+    body = encodeURIComponent(
+`Hi ${student.name},
 
 I'm writing to check in with you about your attendance in the English classes.
 
@@ -495,8 +504,9 @@ Let us know how you see it and whether we can adjust anything to make this work 
 
 Best,
 People Team`);
+  }
   window.location.href = `mailto:${student.email}?subject=${subject}&body=${body}`;
-  updateMailBtnLabel(btn, topic);
+  refreshLabels();
 }
 
 function bestDisplayName(ident, nameDisplay){
