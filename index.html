@@ -396,7 +396,7 @@ function renderGroups(byTopic, originalNames, nameDisplay){
       card.appendChild(table);
       const hint = document.createElement('div');
       hint.className = 'mail-hint';
-      hint.textContent = 'ES / EN copia el aviso al portapapeles y abre un email en blanco a esa persona — solo tienes que pegar (Ctrl+V / Cmd+V) y enviar.';
+      hint.textContent = 'ES / EN abre un email en blanco ya dirigido y redactado a esa persona, listo para revisar y enviar.';
       card.appendChild(hint);
     }
     groupsEl.appendChild(card);
@@ -429,59 +429,45 @@ function exportToExcel(byTopic, originalNames, nameDisplay){
   XLSX.writeFile(wb, 'resumen_asistencia.xlsx');
 }
 
+function getFirstName(fullName){
+  return String(fullName).trim().split(/\s+/)[0];
+}
+
 function buildMessage(name, pct, topic, lang){
+  const firstName = getFirstName(name);
   if (lang === 'es') {
     return {
-      subject: `Asistencia a clases de inglés — ${topic}`,
+      subject: `Asistencia clases de inglés`,
       body:
-`Hola, ${name}
+`Hola, ${firstName}
 
-Te escribo para revisar contigo la asistencia a las clases de inglés.
+Te escribo porque tu asistencia a inglés está en el ${pct}%. Como sabes, la asistencia mínima obligatoria es del 75%; si te mantienes por debajo de ese límite, podrías perder el beneficio de atender a los próximos cursos de idiomas en el futuro.
 
-Como sabes, para que el programa funcione y podamos mantener el compromiso con la academia, es obligatorio asistir como mínimo al 75% de las clases. Ahora mismo estás en un ${pct}%, y si la asistencia se mantiene por debajo de ese límite, podrías perder tu derecho a este beneficio en el futuro.
+Si estás teniendo problemas de horarios o carga de trabajo, cuéntanos y buscamos una solución juntos antes de que ocurra.
 
-Queremos ver si estás teniendo problemas de carga de trabajo o de horario para buscar una solución juntos.
-Dime cómo lo ves y si podemos reajustar algo para que te encaje.
-
-Un abrazo,
-Equipo de People`
+Un abrazo,`
     };
   }
   return {
-    subject: `English Class Attendance — ${topic}`,
+    subject: `English class attendance`,
     body:
-`Hi ${name},
+`Hi ${firstName},
 
-I'm writing to check in with you about your attendance in the English classes.
+I'm writing because your English class attendance is at ${pct}%. As you know, the minimum required attendance is 75%; if you stay below that threshold, you could lose the benefit of attending upcoming language courses in the future.
 
-As you know, for the program to keep running and for us to honor our commitment to the academy, attendance is required for at least 75% of the classes. Right now you're at ${pct}%, and if attendance stays below that threshold, you could lose access to this benefit going forward.
+If you're having any scheduling or workload issues, let us know and we'll find a solution together before that happens.
 
-We'd like to check whether you're dealing with any workload or scheduling issues so we can find a solution together.
-Let us know how you see it and whether we can adjust anything to make this work for you.
-
-Best,
-People Team`
+Best,`
   };
 }
 
 function copyAndOpenMail(email, name, pct, topic, lang, btn){
   const msg = buildMessage(name, pct, topic, lang);
-  const fullText = `Asunto / Subject: ${msg.subject}\n\n${msg.body}`;
   const original = btn.textContent;
-
-  function afterCopy(ok){
-    // Keep the mailto link tiny (recipient + subject only) and open it in a
-    // new tab so the main tool never navigates away and never loses its state.
-    window.open(`mailto:${email}?subject=${encodeURIComponent(msg.subject)}`, '_blank');
-    btn.textContent = ok ? '✓ Copiado' : '⚠ Abrir';
-    setTimeout(() => { btn.textContent = original; }, 2000);
-  }
-
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(fullText).then(() => afterCopy(true)).catch(() => afterCopy(false));
-  } else {
-    afterCopy(false);
-  }
+  const mailtoUrl = `mailto:${email}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`;
+  window.open(mailtoUrl, '_blank');
+  btn.textContent = '✓ Abierto';
+  setTimeout(() => { btn.textContent = original; }, 2000);
 }
 
 function bestDisplayName(ident, nameDisplay){
