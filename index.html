@@ -169,6 +169,11 @@
     min-width:34px;
   }
   .mini-btn:hover{background:var(--clay);color:#fff;}
+  .email-sub{
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    font-size:11px;color:var(--muted);
+    -webkit-user-select:all;user-select:all;
+  }
 </style>
 </head>
 <body>
@@ -214,6 +219,7 @@ fileInput.addEventListener('change', e => {
   if (e.target.files.length) handleFile(e.target.files[0]);
 });
 document.getElementById('recalc').addEventListener('click', () => {
+  sessionStorage.setItem('asistencia_teacher_domains', teacherInput.value);
   if (lastWorkbook) processWorkbook(lastWorkbook);
 });
 
@@ -224,6 +230,7 @@ function handleFile(file){
   reader.onload = (e) => {
     try{
       const data = new Uint8Array(e.target.result);
+      saveFileToSession(data);
       const wb = XLSX.read(data, {type:'array', cellDates:true});
       lastWorkbook = wb;
       processWorkbook(wb);
@@ -365,8 +372,9 @@ function renderGroups(byTopic, originalNames, nameDisplay){
         const tr = document.createElement('tr');
         if (pct < 75) tr.className = 'low-row';
         const displayName = bestDisplayName(email, nameDisplay);
+        const emailLine = (displayName.toLowerCase() !== email) ? `<div class="email-sub">${escapeHtml(email)}</div>` : '';
         tr.innerHTML = `
-          <td>${escapeHtml(displayName)}</td>
+          <td>${escapeHtml(displayName)}${emailLine}</td>
           <td>${c} / ${total}</td>
           <td>
             <div class="bar-cell">
@@ -396,7 +404,7 @@ function renderGroups(byTopic, originalNames, nameDisplay){
       card.appendChild(table);
       const hint = document.createElement('div');
       hint.className = 'mail-hint';
-      hint.textContent = 'ES / EN abre un email en blanco ya dirigido y redactado a esa persona, listo para revisar y enviar.';
+      hint.textContent = 'ES / EN abre el email ya redactado en esta misma pestaña. Si necesitas volver a la herramienta después, vuelve a subir el Excel (al navegar al email se pierde el estado).';
       card.appendChild(hint);
     }
     groupsEl.appendChild(card);
@@ -463,11 +471,8 @@ Best,`
 
 function copyAndOpenMail(email, name, pct, topic, lang, btn){
   const msg = buildMessage(name, pct, topic, lang);
-  const original = btn.textContent;
   const mailtoUrl = `mailto:${email}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`;
-  window.open(mailtoUrl, '_blank');
-  btn.textContent = '✓ Abierto';
-  setTimeout(() => { btn.textContent = original; }, 2000);
+  window.location.href = mailtoUrl;
 }
 
 function bestDisplayName(ident, nameDisplay){
@@ -480,6 +485,51 @@ function bestDisplayName(ident, nameDisplay){
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+
+function saveFileToSession(uint8Array){
+  try{
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < uint8Array.length; i += chunkSize){
+      binary += String.fromCharCode.apply(null, uint8Array.subarray(i, i + chunkSize));
+    }
+    sessionStorage.setItem('asistencia_file_b64', btoa(binary));
+  }catch(e){
+    // Storage quota or unavailable — restoring after a mailto navigation
+    // just won't work this time, but nothing else breaks.
+  }
+}
+
+function loadFileFromSession(){
+  const b64 = sessionStorage.getItem('asistencia_file_b64');
+  if (!b64) return null;
+  try{
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++){ bytes[i] = binary.charCodeAt(i); }
+    return bytes;
+  }catch(e){
+    return null;
+  }
+}
+
+// Auto-restore: if we have a previously uploaded file saved in this tab,
+// reload it automatically (e.g. right after coming back from a mailto link).
+(function restoreFromSession(){
+  const savedDomains = sessionStorage.getItem('asistencia_teacher_domains');
+  if (savedDomains) teacherInput.value = savedDomains;
+  const bytes = loadFileFromSession();
+  if (bytes){
+    try{
+      const wb = XLSX.read(bytes, {type:'array', cellDates:true});
+      lastWorkbook = wb;
+      processWorkbook(wb);
+    }catch(e){
+      // If restoring fails for any reason, just leave the dropzone empty.
+    }
+  }
+})();
+
 </script>
 </body>
 </html>
