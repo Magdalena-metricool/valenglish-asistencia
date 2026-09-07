@@ -155,29 +155,20 @@
   }
   .export-row button:hover{background:var(--moss);color:#fff;}
 
-  .mail-row{
-    padding:10px 18px 14px;
+  .mail-hint{
+    padding:8px 18px 12px;
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    font-size:11.5px;color:var(--muted);font-style:italic;
     border-top:1px solid #efe9da;
-    text-align:right;
-    display:flex;
-    justify-content:flex-end;
-    gap:8px;
-    flex-wrap:wrap;
   }
-  .mail-note{
+  .mini-btn{
     font-family:'Helvetica Neue',Arial,sans-serif;
-    font-size:12px;color:var(--muted);font-style:italic;
-  }
-  .mail-btn{
-    font-family:'Helvetica Neue',Arial,sans-serif;
-    font-size:12.5px;font-weight:600;
+    font-size:11px;font-weight:700;
     background:none;border:1px solid var(--clay);color:var(--clay);
-    padding:7px 14px;border-radius:3px;cursor:pointer;
+    padding:3px 8px;border-radius:3px;cursor:pointer;margin-right:5px;
+    min-width:34px;
   }
-  .mail-btn:hover:not(:disabled){background:var(--clay);color:#fff;}
-  .mail-btn:disabled{
-    border-color:var(--line);color:var(--muted);cursor:default;
-  }
+  .mini-btn:hover{background:var(--clay);color:#fff;}
 </style>
 </head>
 <body>
@@ -366,7 +357,7 @@ function renderGroups(byTopic, originalNames, nameDisplay){
       card.appendChild(note);
     } else {
       const table = document.createElement('table');
-      table.innerHTML = `<thead><tr><th>Estudiante</th><th>Asistencias</th><th>% Asistencia</th></tr></thead>`;
+      table.innerHTML = `<thead><tr><th>Estudiante</th><th>Asistencias</th><th>% Asistencia</th><th>Aviso</th></tr></thead>`;
       const tbody = document.createElement('tbody');
       students.forEach(email => {
         const c = counts[email];
@@ -383,11 +374,30 @@ function renderGroups(byTopic, originalNames, nameDisplay){
               <span class="pct ${pct<75?'low':''}">${pct}%</span>
             </div>
           </td>`;
+        const actionTd = document.createElement('td');
+        if (pct < 75 && email.includes('@')) {
+          const btnEs = document.createElement('button');
+          btnEs.className = 'mini-btn';
+          btnEs.textContent = 'ES';
+          btnEs.title = `Copiar aviso en español para ${displayName}`;
+          btnEs.addEventListener('click', () => copyAndOpenMail(email, displayName, pct, topic, 'es', btnEs));
+          const btnEn = document.createElement('button');
+          btnEn.className = 'mini-btn';
+          btnEn.textContent = 'EN';
+          btnEn.title = `Copy notice in English for ${displayName}`;
+          btnEn.addEventListener('click', () => copyAndOpenMail(email, displayName, pct, topic, 'en', btnEn));
+          actionTd.appendChild(btnEs);
+          actionTd.appendChild(btnEn);
+        }
+        tr.appendChild(actionTd);
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
       card.appendChild(table);
-      initMailButton(topic, byTopic, nameDisplay, card);
+      const hint = document.createElement('div');
+      hint.className = 'mail-hint';
+      hint.textContent = 'ES / EN copia el aviso al portapapeles y abre un email en blanco a esa persona — solo tienes que pegar (Ctrl+V / Cmd+V) y enviar.';
+      card.appendChild(hint);
     }
     groupsEl.appendChild(card);
   });
@@ -419,94 +429,59 @@ function exportToExcel(byTopic, originalNames, nameDisplay){
   XLSX.writeFile(wb, 'resumen_asistencia.xlsx');
 }
 
-const mailQueues = {};
-
-function buildLowAttendanceList(byTopic, nameDisplay, topic){
-  const sessList = byTopic[topic];
-  const total = sessList.length;
-  const counts = {};
-  sessList.forEach(set => set.forEach(id => { counts[id] = (counts[id]||0) + 1; }));
-  const list = [];
-  Object.keys(counts).forEach(id => {
-    const pct = Math.round((counts[id]/total)*1000)/10;
-    if (pct < 75 && id.includes('@')) {
-      list.push({ email: id, name: bestDisplayName(id, nameDisplay), pct });
-    }
-  });
-  return list;
-}
-
-function initMailButton(topic, byTopic, nameDisplay, container){
-  const list = buildLowAttendanceList(byTopic, nameDisplay, topic);
-  const wrap = document.createElement('div');
-  wrap.className = 'mail-row';
-  if (list.length === 0) {
-    wrap.innerHTML = `<span class="mail-note">Nadie por debajo del 75% con email disponible en este grupo.</span>`;
-    container.appendChild(wrap);
-    return;
-  }
-  mailQueues[topic] = list.slice();
-  const btnEs = document.createElement('button');
-  btnEs.className = 'mail-btn';
-  const btnEn = document.createElement('button');
-  btnEn.className = 'mail-btn';
-
-  function refreshLabels(){
-    const remaining = mailQueues[topic] ? mailQueues[topic].length : 0;
-    if (remaining === 0) {
-      btnEs.textContent = 'Avisos enviados ✓';
-      btnEn.textContent = 'Sent ✓';
-      btnEs.disabled = true;
-      btnEn.disabled = true;
-    } else {
-      btnEs.textContent = `Enviar en Español (${remaining})`;
-      btnEn.textContent = `Send in English (${remaining})`;
-    }
-  }
-  refreshLabels();
-  btnEs.addEventListener('click', () => sendNextMail(topic, 'es', refreshLabels));
-  btnEn.addEventListener('click', () => sendNextMail(topic, 'en', refreshLabels));
-  wrap.appendChild(btnEs);
-  wrap.appendChild(btnEn);
-  container.appendChild(wrap);
-}
-
-function sendNextMail(topic, lang, refreshLabels){
-  const queue = mailQueues[topic];
-  if (!queue || queue.length === 0) return;
-  const student = queue.shift();
-  let subject, body;
+function buildMessage(name, pct, topic, lang){
   if (lang === 'es') {
-    subject = encodeURIComponent(`Asistencia a clases de inglés — ${topic}`);
-    body = encodeURIComponent(
-`Hola, ${student.name}
+    return {
+      subject: `Asistencia a clases de inglés — ${topic}`,
+      body:
+`Hola, ${name}
 
 Te escribo para revisar contigo la asistencia a las clases de inglés.
 
-Como sabes, para que el programa funcione y podamos mantener el compromiso con la academia, es obligatorio asistir como mínimo al 75% de las clases. Ahora mismo estás en un ${student.pct}%, y si la asistencia se mantiene por debajo de ese límite, podrías perder tu derecho a este beneficio en el futuro.
+Como sabes, para que el programa funcione y podamos mantener el compromiso con la academia, es obligatorio asistir como mínimo al 75% de las clases. Ahora mismo estás en un ${pct}%, y si la asistencia se mantiene por debajo de ese límite, podrías perder tu derecho a este beneficio en el futuro.
 
 Queremos ver si estás teniendo problemas de carga de trabajo o de horario para buscar una solución juntos.
 Dime cómo lo ves y si podemos reajustar algo para que te encaje.
 
 Un abrazo,
-Equipo de People`);
-  } else {
-    subject = encodeURIComponent(`English Class Attendance — ${topic}`);
-    body = encodeURIComponent(
-`Hi ${student.name},
+Equipo de People`
+    };
+  }
+  return {
+    subject: `English Class Attendance — ${topic}`,
+    body:
+`Hi ${name},
 
 I'm writing to check in with you about your attendance in the English classes.
 
-As you know, for the program to keep running and for us to honor our commitment to the academy, attendance is required for at least 75% of the classes. Right now you're at ${student.pct}%, and if attendance stays below that threshold, you could lose access to this benefit going forward.
+As you know, for the program to keep running and for us to honor our commitment to the academy, attendance is required for at least 75% of the classes. Right now you're at ${pct}%, and if attendance stays below that threshold, you could lose access to this benefit going forward.
 
 We'd like to check whether you're dealing with any workload or scheduling issues so we can find a solution together.
 Let us know how you see it and whether we can adjust anything to make this work for you.
 
 Best,
-People Team`);
+People Team`
+  };
+}
+
+function copyAndOpenMail(email, name, pct, topic, lang, btn){
+  const msg = buildMessage(name, pct, topic, lang);
+  const fullText = `Asunto / Subject: ${msg.subject}\n\n${msg.body}`;
+  const original = btn.textContent;
+
+  function afterCopy(ok){
+    // Keep the mailto link tiny (recipient + subject only) and open it in a
+    // new tab so the main tool never navigates away and never loses its state.
+    window.open(`mailto:${email}?subject=${encodeURIComponent(msg.subject)}`, '_blank');
+    btn.textContent = ok ? '✓ Copiado' : '⚠ Abrir';
+    setTimeout(() => { btn.textContent = original; }, 2000);
   }
-  window.location.href = `mailto:${student.email}?subject=${subject}&body=${body}`;
-  refreshLabels();
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(fullText).then(() => afterCopy(true)).catch(() => afterCopy(false));
+  } else {
+    afterCopy(false);
+  }
 }
 
 function bestDisplayName(ident, nameDisplay){
