@@ -464,16 +464,37 @@ function sendNextMail(topic, btn){
   const queue = mailQueues[topic];
   if (!queue || queue.length === 0) return;
   const student = queue.shift();
-  const subject = encodeURIComponent(`Aviso de asistencia — ${topic}`);
+  const subject = encodeURIComponent(`Asistencia a clases de inglés / English Class Attendance — ${topic}`);
   const body = encodeURIComponent(
-`Hola ${student.name},
+`[Borra la versión en el idioma que no necesites antes de enviar / Please delete the version in the language you don't need before sending]
 
-Te escribimos porque tu asistencia a las clases de ${topic} está en el ${student.pct}%, por debajo del 75% requerido.
+——— ESPAÑOL ———
 
-Si necesitas reorganizar horarios o tienes alguna dificultad para asistir, contáctanos y lo vemos juntos.
+Hola, ${student.name}
 
-Un saludo,
-Equipo de People`);
+Te escribo para revisar contigo la asistencia a las clases de inglés.
+
+Como sabes, para que el programa funcione y podamos mantener el compromiso con la academia, es obligatorio asistir como mínimo al 75% de las clases. Ahora mismo estás en un ${student.pct}%, y si la asistencia se mantiene por debajo de ese límite, podrías perder tu derecho a este beneficio en el futuro.
+
+Queremos ver si estás teniendo problemas de carga de trabajo o de horario para buscar una solución juntos.
+Dime cómo lo ves y si podemos reajustar algo para que te encaje.
+
+Un abrazo,
+Equipo de People
+
+——— ENGLISH ———
+
+Hi ${student.name},
+
+I'm writing to check in with you about your attendance in the English classes.
+
+As you know, for the program to keep running and for us to honor our commitment to the academy, attendance is required for at least 75% of the classes. Right now you're at ${student.pct}%, and if attendance stays below that threshold, you could lose access to this benefit going forward.
+
+We'd like to check whether you're dealing with any workload or scheduling issues so we can find a solution together.
+Let us know how you see it and whether we can adjust anything to make this work for you.
+
+Best,
+People Team`);
   window.location.href = `mailto:${student.email}?subject=${subject}&body=${body}`;
   updateMailBtnLabel(btn, topic);
 }
