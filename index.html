@@ -404,7 +404,7 @@ function renderGroups(byTopic, originalNames, nameDisplay){
       card.appendChild(table);
       const hint = document.createElement('div');
       hint.className = 'mail-hint';
-      hint.textContent = 'ES / EN abre el email ya redactado en esta misma pestaña. Si necesitas volver a la herramienta después, vuelve a subir el Excel (al navegar al email se pierde el estado).';
+      hint.textContent = 'ES / EN copia el mensaje al portapapeles (por si acaso) e intenta abrir el email ya redactado. Si no se abre solo, pega el mensaje (Ctrl+V) en un email nuevo.';
       card.appendChild(hint);
     }
     groupsEl.appendChild(card);
@@ -472,11 +472,26 @@ Best,`
 function copyAndOpenMail(email, name, pct, topic, lang, btn){
   const msg = buildMessage(name, pct, topic, lang);
   const mailtoUrl = `mailto:${email}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`;
-  window.location.href = mailtoUrl;
+  const original = btn.textContent;
+
+  // Give immediate visible feedback no matter what — this way, even on
+  // computers where the mailto link silently does nothing, something
+  // clearly happens and the message is safely on the clipboard.
+  btn.textContent = '✓ Copiado';
+  setTimeout(() => { btn.textContent = original; }, 4000);
+
+  function proceed(){
+    window.location.href = mailtoUrl;
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(msg.body).then(proceed).catch(proceed);
+  } else {
+    proceed();
+  }
 }
 
 function bestDisplayName(ident, nameDisplay){
-  if (ident.includes('@')) return ident;
   const variants = nameDisplay && nameDisplay[ident];
   if (!variants) return ident;
   return Object.keys(variants).sort((a,b) => variants[b]-variants[a])[0];
