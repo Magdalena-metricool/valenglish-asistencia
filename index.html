@@ -242,13 +242,13 @@ function handleFile(file){
 }
 
 function unifyWorkshopName(topic){
-  const m = topic.match(/(?:GrWshop|Group Workshop)\s*(\d+)/i);
+  const m = topic.match(/(?:GrWshop|Group Workshop)\s*(\d+(?:\.\d+)?)/i);
   if (m) return `Workshop ${m[1]}`;
   return topic;
 }
 
 function isMonthSheet(name){
-  return /(?:^|[^a-z])(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?:[^a-z]|$)/i.test(name);
+  return /(?:^|[^a-z])(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)(?:[^a-z]|$)/i.test(name);
 }
 
 function isDateLike(v){
@@ -304,6 +304,58 @@ function processWorkbook(wb){
           i++;
         }
         if (topic) sessions.push({topic, sheetName, students});
+      } else if (r && String(r[1]||'').trim().toUpperCase() === 'STUDENT NAME' && String(r[3]||'').trim().toUpperCase() === 'STUDENT ID') {
+        // "Student Attendance Tracker" format (P/U/E/T marks + precomputed totals)
+        const findLabelValue = (label) => {
+          for (let back = 1; back <= 8; back++){
+            const row = rows[i - back];
+            if (!row) continue;
+            for (let c = 0; c < row.length; c++){
+              if (String(row[c]||'').trim().toUpperCase() === label){
+                const valRow = rows[i - back + 1];
+                return valRow ? valRow[c] : null;
+              }
+            }
+          }
+          return null;
+        };
+        const courseTitle = findLabelValue('COURSE TITLE');
+        const professorName = findLabelValue('PROFESSOR NAME');
+        let totalsCol = -1;
+        for (let c = 0; c < r.length; c++){
+          if (String(r[c]||'').trim().toUpperCase() === 'TOTALS'){ totalsCol = c; break; }
+        }
+        if (!courseTitle || totalsCol === -1) { i++; }
+        else {
+          const topic = String(courseTitle).trim();
+          const profLower = professorName ? String(professorName).trim().toLowerCase() : null;
+          const blockStudents = [];
+          let k = i + 2;
+          while (k < rows.length && rows[k] && rows[k][1]) {
+            const rawName = String(rows[k][1]).trim();
+            if (rawName && rawName.toLowerCase() !== profLower) {
+              const p = Number(rows[k][totalsCol]) || 0;
+              const u = Number(rows[k][totalsCol+1]) || 0;
+              const e = Number(rows[k][totalsCol+2]) || 0;
+              const t = Number(rows[k][totalsCol+3]) || 0;
+              const total = p + u + e + t;
+              if (total > 0) blockStudents.push({ name: rawName, present: p, total });
+            }
+            k++;
+          }
+          const sharedTotal = blockStudents.reduce((m, s) => Math.max(m, s.total), 0);
+          for (let idx = 0; idx < sharedTotal; idx++){
+            const set = new Set();
+            blockStudents.forEach(s => { if (idx < s.present) set.add(s.name.toLowerCase()); });
+            sessions.push({ topic, sheetName, students: set });
+          }
+          blockStudents.forEach(s => {
+            const ident = s.name.toLowerCase();
+            if (!nameDisplay[ident]) nameDisplay[ident] = {};
+            nameDisplay[ident][s.name] = (nameDisplay[ident][s.name]||0) + 1;
+          });
+          i = k;
+        }
       } else {
         i++;
       }
@@ -311,7 +363,7 @@ function processWorkbook(wb){
   });
 
   if (sessions.length === 0) {
-    statusEl.textContent = 'No encontré sesiones con el formato esperado (Topic / ID / Name...) en este archivo.';
+    statusEl.textContent = 'No encontré sesiones con ninguno de los formatos esperados (Zoom/Metricool "Topic/ID" o "Student Attendance Tracker" P/U/E/T) en este archivo.';
     groupsEl.innerHTML = '';
     return;
   }
