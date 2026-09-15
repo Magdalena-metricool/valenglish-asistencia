@@ -435,7 +435,7 @@ function renderGroups(byTopic, originalNames, nameDisplay){
             </div>
           </td>`;
         const actionTd = document.createElement('td');
-        if (pct < 75 && email.includes('@')) {
+        if (pct < 75) {
           const btnEs = document.createElement('button');
           btnEs.className = 'mini-btn';
           btnEs.textContent = 'ES';
@@ -522,8 +522,15 @@ Best,`
 }
 
 function copyAndOpenMail(email, name, pct, topic, lang, btn){
+  let recipient = email;
+  if (!recipient || !recipient.includes('@')) {
+    const entered = window.prompt(`No tengo el email de ${name} (este Excel no lo incluye). Escríbelo aquí:`, '');
+    if (!entered || !entered.includes('@')) return; // cancelled or invalid, do nothing
+    recipient = entered.trim();
+  }
+
   const msg = buildMessage(name, pct, topic, lang);
-  const mailtoUrl = `mailto:${email}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`;
+  const mailtoUrl = `mailto:${recipient}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`;
   const original = btn.textContent;
 
   // Give immediate visible feedback no matter what — this way, even on
