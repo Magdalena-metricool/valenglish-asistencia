@@ -169,11 +169,6 @@
     min-width:34px;
   }
   .mini-btn:hover{background:var(--clay);color:#fff;}
-  .email-sub{
-    font-family:'Helvetica Neue',Arial,sans-serif;
-    font-size:11px;color:var(--muted);
-    -webkit-user-select:all;user-select:all;
-  }
 </style>
 </head>
 <body>
@@ -424,9 +419,8 @@ function renderGroups(byTopic, originalNames, nameDisplay){
         const tr = document.createElement('tr');
         if (pct < 75) tr.className = 'low-row';
         const displayName = bestDisplayName(email, nameDisplay);
-        const emailLine = (displayName.toLowerCase() !== email) ? `<div class="email-sub">${escapeHtml(email)}</div>` : '';
         tr.innerHTML = `
-          <td>${escapeHtml(displayName)}${emailLine}</td>
+          <td>${escapeHtml(displayName)}</td>
           <td>${c} / ${total}</td>
           <td>
             <div class="bar-cell">
@@ -456,7 +450,7 @@ function renderGroups(byTopic, originalNames, nameDisplay){
       card.appendChild(table);
       const hint = document.createElement('div');
       hint.className = 'mail-hint';
-      hint.textContent = 'ES / EN copia el mensaje al portapapeles (por si acaso) e intenta abrir el email ya redactado. Si no se abre solo, pega el mensaje (Ctrl+V) en un email nuevo.';
+      hint.textContent = 'ES / EN copia el aviso al portapapeles, listo para pegar (Ctrl+V) directamente en Slack.';
       card.appendChild(hint);
     }
     groupsEl.appendChild(card);
@@ -522,31 +516,23 @@ Best,`
 }
 
 function copyAndOpenMail(email, name, pct, topic, lang, btn){
-  let recipient = email;
-  if (!recipient || !recipient.includes('@')) {
-    const entered = window.prompt(`No tengo el email de ${name} (este Excel no lo incluye). Escríbelo aquí:`, '');
-    if (!entered || !entered.includes('@')) return; // cancelled or invalid, do nothing
-    recipient = entered.trim();
-  }
-
   const msg = buildMessage(name, pct, topic, lang);
-  const mailtoUrl = `mailto:${recipient}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`;
   const original = btn.textContent;
 
-  // Give immediate visible feedback no matter what — this way, even on
-  // computers where the mailto link silently does nothing, something
-  // clearly happens and the message is safely on the clipboard.
-  btn.textContent = '✓ Copiado';
-  setTimeout(() => { btn.textContent = original; }, 4000);
-
-  function proceed(){
-    window.location.href = mailtoUrl;
+  function done(ok){
+    if (ok) {
+      btn.textContent = '✓ Copiado';
+    } else {
+      window.prompt('No pude copiar automáticamente. Copia este texto (Ctrl+C):', msg.body);
+      btn.textContent = '⚠ Copia manual';
+    }
+    setTimeout(() => { btn.textContent = original; }, 2500);
   }
 
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(msg.body).then(proceed).catch(proceed);
+    navigator.clipboard.writeText(msg.body).then(() => done(true)).catch(() => done(false));
   } else {
-    proceed();
+    done(false);
   }
 }
 
