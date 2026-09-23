@@ -11,34 +11,42 @@ on:
     - cron: '0 7 5 4 *'    # Lunes 5 abr 2027  → 9:00h España (CEST)
     - cron: '0 7 3 5 *'    # Lunes 3 may 2027  → 9:00h España (CEST)
     - cron: '0 7 7 6 *'    # Lunes 7 jun 2027  → 9:00h España (CEST)
+    - cron: '0 5 1 * *'    # Día 1 de cada mes → "latido" interno, no envía nada a Slack
 
   # Permite lanzarlo manualmente desde la interfaz de GitHub si hace falta
   workflow_dispatch:
 
 jobs:
   enviar-recordatorio:
+    # No se ejecuta en el cron de "latido" mensual, solo en las fechas reales de recordatorio
+    if: github.event.schedule != '0 5 1 * *'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Calcular mes a revisar
-        id: fecha
-        run: |
-          MONTH=$(date +%-m)
-          YEAR=$(date +%Y)
-          PREV_MONTH=$((MONTH - 1))
-          PREV_YEAR=$YEAR
-          if [ $PREV_MONTH -eq 0 ]; then
-            PREV_MONTH=12
-            PREV_YEAR=$((YEAR - 1))
-          fi
-          MESES=("" "enero" "febrero" "marzo" "abril" "mayo" "junio" "julio" "agosto" "septiembre" "octubre" "noviembre" "diciembre")
-          echo "mes=${MESES[$PREV_MONTH]} $PREV_YEAR" >> $GITHUB_OUTPUT
-
       - name: Enviar recordatorio a Slack
         run: |
           curl -s -X POST \
             -H 'Content-type: application/json' \
             --data "{
-              \"text\": \"📊 *Recordatorio mensual — Control de Asistencia ValEnglish*\n\nYa está disponible el Excel de reportes de Zoom de *${{ steps.fecha.outputs.mes }}*. Es el momento de revisar la asistencia de los estudiantes.\n\nPor favor, sube el archivo a la herramienta y comparte el resumen con el equipo. 🙌\"
+              \"text\": \"📊 *Recordatorio mensual — Control de Asistencia ValEnglish*\n\nEs el momento de revisar la asistencia de los estudiantes.\n\nPor favor, sube el archivo a la herramienta y comparte el resumen con el equipo. 🙌\"
             }" \
             "${{ secrets.SLACK_WEBHOOK_URL }}"
+
+  mantener-repo-activo:
+    # GitHub desactiva en silencio los workflows programados si el repo lleva 60 días sin
+    # actividad (commits/pushes). Este job hace un commit trivial una vez al mes para que
+    # eso nunca llegue a pasar. No manda nada a Slack ni afecta a los recordatorios.
+    if: github.event.schedule == '0 5 1 * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Actualizar marca de actividad
+        run: |
+          date -u > .keepalive
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .keepalive
+          git diff --staged --quiet || git commit -m "chore: mantener el repo activo (evita el auto-disable de GitHub a los 60 días)"
+          git push
