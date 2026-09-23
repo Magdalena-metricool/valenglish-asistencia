@@ -3,9 +3,9 @@ name: Recordatorios de Asistencia ValEnglish
 on:
   schedule:
     # Todas las horas en UTC. España es UTC+1 (CET) en invierno, UTC+2 (CEST) en verano.
-    - cron: '0 8 2 11 *'   # Lunes 2 nov 2026  → 9:00h España (CET)
+    - cron: '0 8 26 10 *'  # Lunes 26 oct 2026 → 9:00h España (CET)
+    - cron: '0 8 16 11 *'  # Lunes 16 nov 2026 → 9:00h España (CET)
     - cron: '0 8 7 12 *'   # Lunes 7 dic 2026  → 9:00h España (CET)
-    - cron: '0 8 10 12 *'  # Jueves 10 dic 2026 → 9:00h España (CET)
     - cron: '0 8 1 2 *'    # Lunes 1 feb 2027  → 9:00h España (CET)
     - cron: '0 8 1 3 *'    # Lunes 1 mar 2027  → 9:00h España (CET)
     - cron: '0 7 5 4 *'    # Lunes 5 abr 2027  → 9:00h España (CEST)
